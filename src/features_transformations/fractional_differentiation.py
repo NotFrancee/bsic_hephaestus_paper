@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from statsmodels.tsa.stattools import adfuller
@@ -73,6 +72,39 @@ def fracDiff_FFD(series, d, thres=1e-5):
     df = pd.concat(df, axis=1)
 
     return df
+
+
+def find_min_stationary_d(
+    df: pd.DataFrame,
+    threshold: float = 0.0001,
+    diffs: np.ndarray = np.linspace(0.05, 0.95, 19),
+    p_value: float = 0.05,
+) -> pd.DataFrame:
+    """
+    Find the series that passes the adf test at the given p_value.
+    The time series must be a single column dataframe.
+
+    Args:
+    df (pd.DataFrame): Dataframe with series to be differentiated.
+    threshold (float): threshold value to drop non-significant weights.
+    diffs (np.linspace): Space for candidate d values.
+    p_value (float): ADF test p-value limit for rejection of null
+    hypothesis.
+    Returns:
+    pd.DataFrame: Dataframe containing differentiated series. This
+    series is stationary and maintains maximum memory information.
+    """
+    for diff in diffs:
+        if diff == 0:
+            continue
+
+        s = fracDiff_FFD(df, diff, threshold)
+        adf_stat = adfuller(s, maxlag=1, regression="c", autolag=None)[1]  # type: ignore
+        if adf_stat < p_value:
+            s.columns = ["d=" + str(diff)]
+            return s
+
+    raise ValueError("No series found with p-value < 0.05")
 
 
 # def plotMinFFD():
