@@ -3,78 +3,73 @@ import pandas as pd
 from statsmodels.tsa.stattools import adfuller
 
 
-def getWeights_FFD(d, thres):
+def compute_weights_fixed_window(d: float, threshold: float = 1e-5) -> pd.DataFrame:
     """
-    Get the weights for Fractional Differentiation,
-    given the threshold for the weight.
-    This is the FFD implementation of Fractional Differentiation.
+    Compute the weights of individual data points for fractional
+    differentiation with fixed window:
+    Args:
+    * d (float): Fractional differentiation value.
+    * threshold (float): Minimum weight to calculate.
 
-    Parameters
-    ----------
-    d : float
-        The order of differentiation.
-    thres : float
-        Threshold that determines the cutoff weight for the window.
-
-    Returns
-    -------
-    np.ndarray
-        The array of weights for the fractional differentiation.
+    Returns:
+    * pd.DataFrame: Dataframe containing the weights for each point.
     """
-
-    w, k = [1.0], 1
-
+    w = [1.0]
+    k = 1
     while True:
-        w_ = -w[-1] / k * (d - k + 1)
-
-        if abs(w_) < thres:
+        v = -w[-1] / k * (d - k + 1)
+        if abs(v) < threshold:
             break
-
-        w.append(w_)
+        w.append(v)
         k += 1
 
     w = np.array(w[::-1]).reshape(-1, 1)
-    return w
+    return pd.DataFrame(w)
 
 
-def fracDiff_FFD(series, d, thres=1e-5):
+def fixed_window_fracc_diff(
+    df: pd.DataFrame, d: float, threshold: float = 1e-5
+) -> pd.DataFrame:
     """
-    Fractionally Differentiate a Series with the FFD method.
+    Compute the d fractional difference of the series with a fixed
+    width window.
 
-    Parameters
-    ----------
-    series : pd.Series
-        Series to differentiate
-    d : float
-        The order of differentiation
-    thres : float, optional
-        The cutoff weight for the window, by default 1e-5
+    Args:
+    * df (pd.DataFrame): Dataframe with series to be differentiated.
+    * d (float): Order of differentiation.
+    * threshold (float): threshold value to drop non-significant
+      weights.
+
+    Returns:
+    * pd.DataFrame: Dataframe containing differentiated series.
     """
 
-    # 1) Compute weights for the longest series
-    w = getWeights_FFD(d, thres)
-
-    # 2) Apply weights to values
+    w = compute_weights_fixed_window(d, threshold)
     width = len(w)
-    df = {}
+    results = {}
+    names = df.columns
+    for name in names:
+        series_f = df[name].ffill().dropna()
 
-    for name in series.columns:
-        seriesF, df_ = series[[name]].fillna(method="ffill").dropna(), pd.Series()
+        # if l > series_f.shape[0]:
+        #     return standard_frac_diff(df, d, threshold)
+        r = range(width, series_f.shape[0])
+        # df_ = pd.Series(index=r)
 
-        for iloc1 in range(width, seriesF.shape[0]):
-            loc0, loc1 = seriesF.index[iloc1 - width], seriesF.index[iloc1]
-            if not np.isfinite(series.loc[loc1, name]):
-                continue  # exclude NAs
-            df_[loc1] = np.dot(w.T, seriesF.loc[loc0:loc1])[0]
+        for idx in r:
+            if not np.isfinite(df[name].iloc[idx]):
+                continue
+            results[idx] = np.dot(
+                w.iloc[-(idx):, :].T, series_f.iloc[idx - width : idx]
+            )[0]
 
-        df[name] = df_.copy(deep=True)
+    result = pd.DataFrame(pd.Series(results), columns=["Frac_diff"])
+    result.set_index(df[width:].index, inplace=True)
 
-    df = pd.concat(df, axis=1)
-
-    return df
+    return result
 
 
-def find_min_stationary_d(
+def find_stat_series(
     df: pd.DataFrame,
     threshold: float = 0.0001,
     diffs: np.ndarray = np.linspace(0.05, 0.95, 19),
@@ -85,43 +80,24 @@ def find_min_stationary_d(
     The time series must be a single column dataframe.
 
     Args:
-    df (pd.DataFrame): Dataframe with series to be differentiated.
-    threshold (float): threshold value to drop non-significant weights.
-    diffs (np.linspace): Space for candidate d values.
-    p_value (float): ADF test p-value limit for rejection of null
+
+    * df (pd.DataFrame): Dataframe with series to be differentiated.
+    * threshold (float): threshold value to drop non-significant weights.
+    * diffs (np.linspace): Space for candidate d values.
+    * p_value (float): ADF test p-value limit for rejection of null
     hypothesis.
+
     Returns:
-    pd.DataFrame: Dataframe containing differentiated series. This
+    * pd.DataFrame: Dataframe containing differentiated series. This
     series is stationary and maintains maximum memory information.
     """
     for diff in diffs:
         if diff == 0:
             continue
-
-        s = fracDiff_FFD(df, diff, threshold)
-        adf_stat = adfuller(s, maxlag=1, regression="c", autolag=None)[1]  # type: ignore
+        s = fixed_window_fracc_diff(df, diff, threshold)
+        adf_stat = adfuller(s, maxlag=1, regression="c", autolag=None)[1]
         if adf_stat < p_value:
             s.columns = ["d=" + str(diff)]
             return s
 
-    raise ValueError("No series found with p-value < 0.05")
-
-
-# def plotMinFFD():
-#     path, instName = "./", "ES1_Index_Method12"
-
-#     out = pd.DataFrame(columns=["adfStat", "pVal", "lags", "nObs", "95% conf", "corr"])
-#     df0 = pd.read_csv(path + instName + ".csv", index_col=0, parse_dates=True)
-
-#     for d in np.linspace(0, 1, 11):
-#         df1 = np.log(df0[["Close"]]).resample("1D").last()  # downcast to daily obs
-#         df2 = fracDiff_FFD(df1, d, thres=0.01)
-#         corr = np.corrcoef(df1.loc[df2.index, "Close"], df2["Close"])[0, 1]
-#         df2 = adfuller(df2["Close"], maxlag=1, regression="c", autolag=None)
-#         out.loc[d] = list(df2[:4]) + [df2[4]["5%"]] + [corr]  # with critical value
-
-#     out.to_csv(path + instName + "_testMinFFD.csv")
-#     out[["adfStat", "corr"]].plot(secondary_y="adfStat")
-#     plt.axhline(out["95% conf"].mean(), linewidth=1, color="r", linestyle="dotted")
-#     plt.savefig(path + instName + "_testMinFFD.png")
-#     plt.show()
+    raise Exception("No series found with p-value < 0.05.")
