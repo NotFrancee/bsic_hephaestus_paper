@@ -91,8 +91,14 @@ def fixed_window_fracc_diff(
     for name in names:
         series_f = df[name].ffill().dropna()
 
-        # if l > series_f.shape[0]:
-        #     return standard_frac_diff(df, d, threshold)
+        if width > series_f.shape[0]:
+            print(
+                "width > series.shape[0]. Doing standard frac diff with full window l"
+            )
+            std_fracdiff = frac_diff_standard(df, d, 1)
+            print(f"returning standard fracdiff: \n{std_fracdiff}")
+
+            return std_fracdiff
         r = range(width, series_f.shape[0])
         # df_ = pd.Series(index=r)
 
@@ -111,7 +117,7 @@ def fixed_window_fracc_diff(
 
 def find_stat_series(
     df: pd.DataFrame,
-    threshold: float = 0.0001,
+    threshold: float = 0.01,
     diffs: np.ndarray = np.linspace(0.05, 0.95, 19),
     p_value: float = 0.05,
 ) -> pd.DataFrame:
