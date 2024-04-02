@@ -3,7 +3,47 @@ import pandas as pd
 from statsmodels.tsa.stattools import adfuller
 
 
-def compute_weights_fixed_window(d: float, threshold: float = 1e-5) -> pd.DataFrame:
+def get_weights(d, size):
+    # thres>0 drops insignificant weights
+    w = [1.0]
+    for k in range(1, size):
+        w_ = -w[-1] / k * (d - k + 1)
+        w.append(w_)
+    w = np.array(w[::-1]).reshape(-1, 1)
+    return w
+
+
+def frac_diff_standard(series, d, thres):
+    """
+    Increasing width window, with treatment of NaNs
+    Note 1: For thres=1, nothing is skipped.
+    Note 2: d can be any positive fractional, not necessarily bounded [0,1]."""
+    # 1) Compute weights for the longest series
+    w = get_weights(d, series.shape[0])
+    # 2) Determine initial calcs to be skipped based on weight-loss threshold
+    w_ = np.cumsum(abs(w))
+    w_ /= w_[-1]
+    skip = w_[w_ > thres].shape[0]
+    # 3) Apply weights to values
+    print("--- debug standard frac diff ---")
+    df = {}
+    for name in series.columns:
+        seriesF = series[[name]].ffill().dropna()
+        df_ = pd.Series()
+        for iloc in range(skip, seriesF.shape[0]):
+            loc = seriesF.index[iloc]
+            print(f"processing iloc={iloc}, loc={loc}")
+            if not np.isfinite(series.loc[loc, name]):
+                print("continuining")
+                continue  # exclude NAs
+            df_[loc] = np.dot(w[-(iloc + 1) :, :].T, seriesF.loc[:loc])[0, 0]
+        df[name] = df_.copy(deep=True)
+
+    df = pd.concat(df, axis=1)
+    print("--- end of code for standard frac diff ---")
+    return df
+
+
     """
     Compute the weights of individual data points for fractional
     differentiation with fixed window:
