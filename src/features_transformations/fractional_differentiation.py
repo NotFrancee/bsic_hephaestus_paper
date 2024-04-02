@@ -44,6 +44,7 @@ def frac_diff_standard(series, d, thres):
     return df
 
 
+def get_weights_ffd(d: float, threshold: float = 1e-5) -> pd.DataFrame:
     """
     Compute the weights of individual data points for fractional
     differentiation with fixed window:
@@ -67,9 +68,7 @@ def frac_diff_standard(series, d, thres):
     return pd.DataFrame(w)
 
 
-def fixed_window_fracc_diff(
-    df: pd.DataFrame, d: float, threshold: float = 1e-5
-) -> pd.DataFrame:
+def frac_diff_ffd(df: pd.DataFrame, d: float, threshold: float = 1e-5) -> pd.DataFrame:
     """
     Compute the d fractional difference of the series with a fixed
     width window.
@@ -84,12 +83,16 @@ def fixed_window_fracc_diff(
     * pd.DataFrame: Dataframe containing differentiated series.
     """
 
-    w = compute_weights_fixed_window(d, threshold)
+    w = get_weights_ffd(d, threshold)
+    print(f"computing ffd with d={d}, thres={threshold}, weights are \n{w}")
     width = len(w)
     results = {}
     names = df.columns
     for name in names:
         series_f = df[name].ffill().dropna()
+        print(
+            "series and width - series shape: ", series_f.shape[0], " - width: ", width
+        )
 
         if width > series_f.shape[0]:
             print(
@@ -100,6 +103,7 @@ def fixed_window_fracc_diff(
 
             return std_fracdiff
         r = range(width, series_f.shape[0])
+        print("proceeding with FFD. range is ", r)
         # df_ = pd.Series(index=r)
 
         for idx in r:
@@ -140,8 +144,9 @@ def find_stat_series(
     for diff in diffs:
         if diff == 0:
             continue
-        s = fixed_window_fracc_diff(df, diff, threshold)
-        adf_stat = adfuller(s, maxlag=1, regression="c", autolag=None)[1]
+        s = frac_diff_ffd(df, diff, threshold)
+        print(f"diff = {diff}, \n{s}\n---")
+        adf_stat = adfuller(s, maxlag=1, regression="c", autolag=None)[1]  # type: ignore
         if adf_stat < p_value:
             s.columns = ["d=" + str(diff)]
             return s
