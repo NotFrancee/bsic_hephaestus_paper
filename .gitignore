@@ -3,3 +3,4 @@
 dist
 **/__pycache__
 **/build
+src/feature_selection/test.ipynb
